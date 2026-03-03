@@ -231,6 +231,20 @@ class TCG_YGO_Importer {
 		if ( ! empty( $card_data['card_prices'][0] ) ) {
 			update_post_meta( $post_id, '_ygo_ref_prices', wp_json_encode( $card_data['card_prices'][0] ) );
 		}
+
+		// Save full card_sets data (set_code, set_rarity, set_price per set).
+		if ( ! empty( $card_data['card_sets'] ) && is_array( $card_data['card_sets'] ) ) {
+			$sets_data = [];
+			foreach ( $card_data['card_sets'] as $cs ) {
+				$sets_data[] = [
+					'set_name'   => $cs['set_name'] ?? '',
+					'set_code'   => $cs['set_code'] ?? '',
+					'set_rarity' => $cs['set_rarity'] ?? '',
+					'set_price'  => $cs['set_price'] ?? '',
+				];
+			}
+			update_post_meta( $post_id, '_ygo_card_sets', wp_json_encode( $sets_data ) );
+		}
 	}
 
 	/**
