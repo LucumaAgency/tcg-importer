@@ -32,15 +32,14 @@ class TCG_YGO_Importer {
 		foreach ( $body as $set ) {
 			if ( ! empty( $set['set_name'] ) ) {
 				$sets[] = [
-					'set_name'   => $set['set_name'],
-					'set_code'   => $set['set_code'] ?? '',
+					'set_name'     => $set['set_name'],
+					'set_code'     => $set['set_code'] ?? '',
 					'num_of_cards' => $set['num_of_cards'] ?? 0,
-					'tcg_date'   => $set['tcg_date'] ?? '',
+					'tcg_date'     => $set['tcg_date'] ?? '',
 				];
 			}
 		}
 
-		// Sort by name.
 		usort( $sets, function ( $a, $b ) {
 			return strcasecmp( $a['set_name'], $b['set_name'] );
 		} );
@@ -73,7 +72,6 @@ class TCG_YGO_Importer {
 			return new WP_Error( 'api_error', 'No se pudieron contar las cartas del set.' );
 		}
 
-		// The API returns meta.total_rows with the count.
 		if ( isset( $body['meta']['total_rows'] ) ) {
 			return (int) $body['meta']['total_rows'];
 		}
@@ -105,7 +103,6 @@ class TCG_YGO_Importer {
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 
 		if ( ! isset( $body['data'] ) || ! is_array( $body['data'] ) ) {
-			// Could be no more results — return empty.
 			return [];
 		}
 
@@ -113,12 +110,30 @@ class TCG_YGO_Importer {
 	}
 
 	/**
-	 * Import a single card into the ygo_card CPT.
+	 * Find the set entry matching the imported set name within card_sets.
 	 *
-	 * @param array $card_data Card data from the API.
+	 * @param array  $card_sets Array of set entries from the API.
+	 * @param string $set_name  The set being imported.
+	 * @return array|null
+	 */
+	private function find_set_entry( $card_sets, $set_name ) {
+		foreach ( $card_sets as $cs ) {
+			if ( isset( $cs['set_name'] ) && $cs['set_name'] === $set_name ) {
+				return $cs;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Import a single card for a specific set into the ygo_card CPT.
+	 * Each card+set combination = 1 post.
+	 *
+	 * @param array  $card_data Card data from the API.
+	 * @param string $set_name  The set being imported.
 	 * @return array Result with status and message.
 	 */
-	public function import_card( $card_data ) {
+	public function import_card( $card_data, $set_name ) {
 		$card_id   = $card_data['id'] ?? 0;
 		$card_name = $card_data['name'] ?? '';
 
@@ -129,22 +144,45 @@ class TCG_YGO_Importer {
 			];
 		}
 
-		// Check for existing card by _ygo_card_id.
+		// Find the specific set entry for this import.
+		$set_entry = null;
+		if ( ! empty( $card_data['card_sets'] ) ) {
+			$set_entry = $this->find_set_entry( $card_data['card_sets'], $set_name );
+		}
+
+		$set_code = $set_entry['set_code'] ?? '';
+
+		// Dedup by _ygo_card_id + _ygo_set_code.
 		$existing = get_posts( [
 			'post_type'      => 'ygo_card',
 			'post_status'    => 'any',
-			'meta_key'       => '_ygo_card_id',
-			'meta_value'     => $card_id,
 			'posts_per_page' => 1,
 			'fields'         => 'ids',
+			'meta_query'     => [
+				'relation' => 'AND',
+				[
+					'key'   => '_ygo_card_id',
+					'value' => $card_id,
+				],
+				[
+					'key'   => '_ygo_set_code',
+					'value' => $set_code,
+				],
+			],
 		] );
 
 		$is_update = ! empty( $existing );
 		$post_id   = $is_update ? $existing[0] : 0;
 
+		// Post title includes set code for uniqueness: "Zoroa, the Magistus of Flame (MZMU-EN094)"
+		$post_title = $card_name;
+		if ( ! empty( $set_code ) ) {
+			$post_title .= ' (' . $set_code . ')';
+		}
+
 		$post_args = [
 			'post_type'    => 'ygo_card',
-			'post_title'   => sanitize_text_field( $card_name ),
+			'post_title'   => sanitize_text_field( $post_title ),
 			'post_content' => isset( $card_data['desc'] ) ? wp_kses_post( $card_data['desc'] ) : '',
 			'post_status'  => 'publish',
 		];
@@ -166,19 +204,24 @@ class TCG_YGO_Importer {
 		$post_id = $is_update ? $post_id : $result;
 
 		// Save meta fields.
-		$this->save_meta( $post_id, $card_data );
+		$this->save_meta( $post_id, $card_data, $set_entry );
 
-		// Set taxonomies.
-		$this->save_taxonomies( $post_id, $card_data );
+		// Set taxonomies (only this set).
+		$this->save_taxonomies( $post_id, $card_data, $set_name );
 
 		// Download featured image if not already set.
 		if ( ! has_post_thumbnail( $post_id ) ) {
 			$this->save_featured_image( $post_id, $card_data );
 		}
 
+		$label = $card_name;
+		if ( $set_code ) {
+			$label .= ' [' . $set_code . ']';
+		}
+
 		return [
 			'status'  => $is_update ? 'updated' : 'created',
-			'message' => $card_name,
+			'message' => $label,
 			'post_id' => $post_id,
 		];
 	}
@@ -186,10 +229,11 @@ class TCG_YGO_Importer {
 	/**
 	 * Save card meta fields.
 	 *
-	 * @param int   $post_id
-	 * @param array $card_data
+	 * @param int        $post_id
+	 * @param array      $card_data
+	 * @param array|null $set_entry The specific set entry for this post.
 	 */
-	private function save_meta( $post_id, $card_data ) {
+	private function save_meta( $post_id, $card_data, $set_entry ) {
 		update_post_meta( $post_id, '_ygo_card_id', $card_data['id'] );
 
 		if ( isset( $card_data['frameType'] ) ) {
@@ -200,11 +244,9 @@ class TCG_YGO_Importer {
 			update_post_meta( $post_id, '_ygo_typeline', sanitize_text_field( implode( ' / ', $card_data['typeline'] ) ) );
 		}
 
-		// ATK / DEF — can be null for non-monster cards.
 		update_post_meta( $post_id, '_ygo_atk', $card_data['atk'] ?? '' );
 		update_post_meta( $post_id, '_ygo_def', $card_data['def'] ?? '' );
 
-		// Level / Rank — determine by frame type.
 		$frame = $card_data['frameType'] ?? '';
 		$level = $card_data['level'] ?? '';
 
@@ -232,28 +274,23 @@ class TCG_YGO_Importer {
 			update_post_meta( $post_id, '_ygo_ref_prices', wp_json_encode( $card_data['card_prices'][0] ) );
 		}
 
-		// Save full card_sets data (set_code, set_rarity, set_price per set).
-		if ( ! empty( $card_data['card_sets'] ) && is_array( $card_data['card_sets'] ) ) {
-			$sets_data = [];
-			foreach ( $card_data['card_sets'] as $cs ) {
-				$sets_data[] = [
-					'set_name'   => $cs['set_name'] ?? '',
-					'set_code'   => $cs['set_code'] ?? '',
-					'set_rarity' => $cs['set_rarity'] ?? '',
-					'set_price'  => $cs['set_price'] ?? '',
-				];
-			}
-			update_post_meta( $post_id, '_ygo_card_sets', wp_json_encode( $sets_data ) );
+		// Single set fields for this post.
+		if ( $set_entry ) {
+			update_post_meta( $post_id, '_ygo_set_code', sanitize_text_field( $set_entry['set_code'] ?? '' ) );
+			update_post_meta( $post_id, '_ygo_set_rarity', sanitize_text_field( $set_entry['set_rarity'] ?? '' ) );
+			update_post_meta( $post_id, '_ygo_set_rarity_code', sanitize_text_field( $set_entry['set_rarity_code'] ?? '' ) );
+			update_post_meta( $post_id, '_ygo_set_price', sanitize_text_field( $set_entry['set_price'] ?? '' ) );
 		}
 	}
 
 	/**
-	 * Save card taxonomies.
+	 * Save card taxonomies. Only assigns the current import set.
 	 *
-	 * @param int   $post_id
-	 * @param array $card_data
+	 * @param int    $post_id
+	 * @param array  $card_data
+	 * @param string $set_name The set being imported.
 	 */
-	private function save_taxonomies( $post_id, $card_data ) {
+	private function save_taxonomies( $post_id, $card_data, $set_name ) {
 		if ( ! empty( $card_data['type'] ) ) {
 			wp_set_object_terms( $post_id, $card_data['type'], 'ygo_card_type' );
 		}
@@ -270,11 +307,9 @@ class TCG_YGO_Importer {
 			wp_set_object_terms( $post_id, $card_data['archetype'], 'ygo_archetype' );
 		}
 
-		if ( ! empty( $card_data['card_sets'] ) && is_array( $card_data['card_sets'] ) ) {
-			$set_names = array_unique( array_filter( array_column( $card_data['card_sets'], 'set_name' ) ) );
-			if ( ! empty( $set_names ) ) {
-				wp_set_object_terms( $post_id, $set_names, 'ygo_set' );
-			}
+		// Only this set as taxonomy term.
+		if ( ! empty( $set_name ) ) {
+			wp_set_object_terms( $post_id, $set_name, 'ygo_set' );
 		}
 	}
 
@@ -291,7 +326,6 @@ class TCG_YGO_Importer {
 
 		$image_url = $card_data['card_images'][0]['image_url'];
 
-		// Need these for media_sideload_image.
 		if ( ! function_exists( 'media_sideload_image' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/media.php';
 			require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -329,7 +363,7 @@ class TCG_YGO_Importer {
 		];
 
 		foreach ( $cards as $card_data ) {
-			$result = $this->import_card( $card_data );
+			$result = $this->import_card( $card_data, $set_name );
 
 			$stats['log'][] = $result;
 
