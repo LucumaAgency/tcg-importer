@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TCG Importer
  * Description: Importador de cartas Yu-Gi-Oh! desde la API de YGOProDeck al CPT ygo_card.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: TCG Dev
  * Text Domain: tcg-importer
  */
@@ -69,6 +69,13 @@ function tcg_importer_render_page() {
 		<h1>TCG Importer — Yu-Gi-Oh!</h1>
 
 		<div class="tcg-importer-controls">
+			<label for="tcg-sort-select">Ordenar por:</label>
+			<select id="tcg-sort-select">
+				<option value="name">Nombre (A-Z)</option>
+				<option value="date">Fecha de lanzamiento (recientes)</option>
+				<option value="code">Código de set (A-Z)</option>
+			</select>
+
 			<label for="tcg-set-select">Seleccionar Set:</label>
 			<select id="tcg-set-select" disabled>
 				<option value="">Cargando sets…</option>

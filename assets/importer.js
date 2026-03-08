@@ -2,6 +2,7 @@
 	'use strict';
 
 	var $setSelect   = $('#tcg-set-select');
+	var $sortSelect  = $('#tcg-sort-select');
 	var $importBtn   = $('#tcg-import-btn');
 	var $cancelBtn   = $('#tcg-cancel-btn');
 	var $progressWrap = $('.tcg-progress-wrapper');
@@ -13,6 +14,7 @@
 
 	var cancelled = false;
 	var batchSize = 20;
+	var allSets = [];
 
 	// --- Load sets on page load ---
 	function loadSets() {
@@ -25,15 +27,8 @@
 				return;
 			}
 
-			$setSelect.empty().append('<option value="">— Seleccionar set —</option>');
-
-			$.each(res.data, function (i, set) {
-				var label = set.set_name;
-				if (set.num_of_cards) {
-					label += ' (' + set.num_of_cards + ' cartas)';
-				}
-				$setSelect.append('<option value="' + escHtml(set.set_name) + '">' + escHtml(label) + '</option>');
-			});
+			allSets = res.data;
+			renderSets();
 
 			$setSelect.prop('disabled', false);
 			$importBtn.prop('disabled', false);
@@ -41,6 +36,53 @@
 			log('Error de red al cargar sets.', 'error');
 		});
 	}
+
+	// --- Sort and render sets in the dropdown ---
+	function sortSets(sets, mode) {
+		var sorted = sets.slice();
+		if (mode === 'date') {
+			sorted.sort(function (a, b) {
+				return (b.tcg_date || '').localeCompare(a.tcg_date || '');
+			});
+		} else if (mode === 'code') {
+			sorted.sort(function (a, b) {
+				return (a.set_code || '').localeCompare(b.set_code || '');
+			});
+		} else {
+			sorted.sort(function (a, b) {
+				return a.set_name.toLowerCase().localeCompare(b.set_name.toLowerCase());
+			});
+		}
+		return sorted;
+	}
+
+	function renderSets() {
+		var mode = $sortSelect.val();
+		var sorted = sortSets(allSets, mode);
+		var currentVal = $setSelect.val();
+
+		$setSelect.empty().append('<option value="">— Seleccionar set —</option>');
+
+		$.each(sorted, function (i, set) {
+			var label = set.set_name;
+			if (mode === 'code' && set.set_code) {
+				label = set.set_code + ' — ' + set.set_name;
+			} else if (mode === 'date' && set.tcg_date) {
+				label = set.tcg_date + ' — ' + set.set_name;
+			}
+			if (set.num_of_cards) {
+				label += ' (' + set.num_of_cards + ' cartas)';
+			}
+			$setSelect.append('<option value="' + escHtml(set.set_name) + '">' + escHtml(label) + '</option>');
+		});
+
+		// Restore previous selection if it still exists.
+		if (currentVal) {
+			$setSelect.val(currentVal);
+		}
+	}
+
+	$sortSelect.on('change', renderSets);
 
 	// --- Import flow ---
 	$importBtn.on('click', function () {
