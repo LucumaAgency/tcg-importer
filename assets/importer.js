@@ -94,7 +94,11 @@
 	});
 
 	// --- Batch loop ---
-	function importLoop(setName, offset, total, stats) {
+	var maxRetries = 3;
+
+	function importLoop(setName, offset, total, stats, retries) {
+		retries = retries || 0;
+
 		if (cancelled || offset >= total) {
 			showSummary(stats, total);
 			resetUI();
@@ -132,14 +136,22 @@
 			var pct = Math.min(Math.round((newOffset / total) * 100), 100);
 			updateProgress(pct, newOffset, total);
 
-			// Continue with next batch.
-			importLoop(setName, newOffset, total, stats);
+			// Continue with next batch (reset retries).
+			importLoop(setName, newOffset, total, stats, 0);
 		}).fail(function () {
-			log('Error de red en lote (offset ' + offset + '). Reintentando…', 'error');
-			// Retry once after a short delay.
-			setTimeout(function () {
-				importLoop(setName, offset, total, stats);
-			}, 3000);
+			if (retries < maxRetries) {
+				log('Error de red en lote (offset ' + offset + '). Reintento ' + (retries + 1) + '/' + maxRetries + '…', 'error');
+				setTimeout(function () {
+					importLoop(setName, offset, total, stats, retries + 1);
+				}, 3000);
+			} else {
+				log('Error de red persistente en lote (offset ' + offset + '). Saltando lote.', 'error');
+				stats.errors += currentBatch;
+				var newOffset = offset + batchSize;
+				var pct = Math.min(Math.round((newOffset / total) * 100), 100);
+				updateProgress(pct, newOffset, total);
+				importLoop(setName, newOffset, total, stats, 0);
+			}
 		});
 	}
 
