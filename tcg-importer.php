@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TCG Importer
  * Description: Importador de cartas Yu-Gi-Oh! desde la API de YGOProDeck al CPT ygo_card.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: TCG Dev
  * Text Domain: tcg-importer
  */
