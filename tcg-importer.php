@@ -127,13 +127,14 @@ add_action( 'wp_ajax_tcg_count_cards', function () {
 	check_ajax_referer( 'tcg_importer_nonce', 'nonce' );
 
 	$set_name = isset( $_POST['set'] ) ? sanitize_text_field( wp_unslash( $_POST['set'] ) ) : '';
+	$set_code = isset( $_POST['set_code'] ) ? sanitize_text_field( wp_unslash( $_POST['set_code'] ) ) : '';
 
 	if ( empty( $set_name ) ) {
 		wp_send_json_error( 'No se especificó un set.' );
 	}
 
 	$importer = new TCG_YGO_Importer();
-	$count    = $importer->count_cards( $set_name );
+	$count    = $importer->count_cards( $set_name, $set_code );
 
 	if ( is_wp_error( $count ) ) {
 		wp_send_json_error( $count->get_error_message() );
@@ -149,6 +150,7 @@ add_action( 'wp_ajax_tcg_import_batch', function () {
 	check_ajax_referer( 'tcg_importer_nonce', 'nonce' );
 
 	$set_name = isset( $_POST['set'] ) ? sanitize_text_field( wp_unslash( $_POST['set'] ) ) : '';
+	$set_code = isset( $_POST['set_code'] ) ? sanitize_text_field( wp_unslash( $_POST['set_code'] ) ) : '';
 	$offset   = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
 	$limit    = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 20;
 
@@ -157,7 +159,7 @@ add_action( 'wp_ajax_tcg_import_batch', function () {
 	}
 
 	$importer = new TCG_YGO_Importer();
-	$result   = $importer->import_batch( $set_name, $offset, $limit );
+	$result   = $importer->import_batch( $set_name, $offset, $limit, $set_code );
 
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( $result->get_error_message() );

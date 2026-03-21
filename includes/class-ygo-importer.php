@@ -51,9 +51,10 @@ class TCG_YGO_Importer {
 	 * Count cards in a set.
 	 *
 	 * @param string $set_name
+	 * @param string $set_code Optional set code for fallback search.
 	 * @return int|WP_Error
 	 */
-	public function count_cards( $set_name ) {
+	public function count_cards( $set_name, $set_code = '' ) {
 		$url = add_query_arg( [
 			'cardset' => $set_name,
 			'num'     => 1,
@@ -62,25 +63,32 @@ class TCG_YGO_Importer {
 
 		$response = wp_remote_get( $url, [ 'timeout' => 30 ] );
 
-		if ( is_wp_error( $response ) ) {
-			return $response;
+		if ( ! is_wp_error( $response ) ) {
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+			if ( empty( $body['error'] ) ) {
+				if ( isset( $body['meta']['total_rows'] ) ) {
+					return (int) $body['meta']['total_rows'];
+				}
+				if ( ! empty( $body['data'] ) ) {
+					return count( $body['data'] );
+				}
+			}
 		}
 
-		$body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-		if ( ! empty( $body['error'] ) ) {
-			return new WP_Error( 'api_error', 'La API no tiene cartas para este set. Es posible que aún no haya sido lanzado.' );
+		// Fallback: search by set_code in full database.
+		if ( $set_code ) {
+			$cards = $this->fetch_cards_by_code( $set_code, $set_name );
+			if ( is_wp_error( $cards ) ) {
+				return $cards;
+			}
+			$count = count( $cards );
+			if ( $count > 0 ) {
+				return $count;
+			}
 		}
 
-		if ( isset( $body['meta']['total_rows'] ) ) {
-			return (int) $body['meta']['total_rows'];
-		}
-
-		if ( ! empty( $body['data'] ) ) {
-			return count( $body['data'] );
-		}
-
-		return new WP_Error( 'api_error', 'No se pudieron contar las cartas del set.' );
+		return new WP_Error( 'api_error', 'No se encontraron cartas para este set en la API.' );
 	}
 
 	/**
@@ -89,9 +97,10 @@ class TCG_YGO_Importer {
 	 * @param string $set_name
 	 * @param int    $num
 	 * @param int    $offset
+	 * @param string $set_code Optional set code for fallback.
 	 * @return array|WP_Error
 	 */
-	public function fetch_cards( $set_name, $num = 20, $offset = 0 ) {
+	public function fetch_cards( $set_name, $num = 20, $offset = 0, $set_code = '' ) {
 		$url = add_query_arg( [
 			'cardset' => $set_name,
 			'num'     => $num,
@@ -100,17 +109,77 @@ class TCG_YGO_Importer {
 
 		$response = wp_remote_get( $url, [ 'timeout' => 60 ] );
 
+		if ( ! is_wp_error( $response ) ) {
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
+			if ( ! empty( $body['data'] ) && is_array( $body['data'] ) ) {
+				return $body['data'];
+			}
+		}
+
+		// Fallback: use cached full-DB cards filtered by set_code.
+		if ( $set_code ) {
+			$all_cards = $this->fetch_cards_by_code( $set_code, $set_name );
+			if ( is_wp_error( $all_cards ) ) {
+				return $all_cards;
+			}
+			return array_slice( $all_cards, $offset, $num );
+		}
+
+		return [];
+	}
+
+	/**
+	 * Fetch all cards for a set by filtering the full database using set_code.
+	 * Results are cached in a transient for 1 hour to avoid re-downloading.
+	 *
+	 * @param string $set_code The set code prefix (e.g. "L5DD").
+	 * @param string $set_name The set name for matching.
+	 * @return array|WP_Error
+	 */
+	public function fetch_cards_by_code( $set_code, $set_name ) {
+		$cache_key = 'tcg_import_fallback_' . sanitize_key( $set_code );
+		$cached    = get_transient( $cache_key );
+
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		// Download full database (no filters).
+		$response = wp_remote_get( self::API_BASE . 'cardinfo.php', [
+			'timeout' => 120,
+		] );
+
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
 
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 
-		if ( ! isset( $body['data'] ) || ! is_array( $body['data'] ) ) {
-			return [];
+		if ( empty( $body['data'] ) ) {
+			return new WP_Error( 'api_error', 'No se pudo descargar la base de datos completa.' );
 		}
 
-		return $body['data'];
+		// Filter cards that have this set_code in their card_sets.
+		$filtered = [];
+		$code_prefix = strtoupper( $set_code );
+
+		foreach ( $body['data'] as $card ) {
+			if ( empty( $card['card_sets'] ) ) {
+				continue;
+			}
+			foreach ( $card['card_sets'] as $cs ) {
+				$cs_code = strtoupper( $cs['set_code'] ?? '' );
+				if ( strpos( $cs_code, $code_prefix . '-' ) === 0 || $cs_code === $code_prefix ) {
+					$filtered[] = $card;
+					break;
+				}
+			}
+		}
+
+		// Cache for 1 hour.
+		set_transient( $cache_key, $filtered, HOUR_IN_SECONDS );
+
+		return $filtered;
 	}
 
 	/**
@@ -120,10 +189,28 @@ class TCG_YGO_Importer {
 	 * @param string $set_name  The set being imported.
 	 * @return array|null
 	 */
-	private function find_set_entry( $card_sets, $set_name ) {
+	private function find_set_entry( $card_sets, $set_name, $set_code = '' ) {
+		// Try exact name match first.
 		foreach ( $card_sets as $cs ) {
 			if ( isset( $cs['set_name'] ) && $cs['set_name'] === $set_name ) {
 				return $cs;
+			}
+		}
+		// Try HTML-decoded name match.
+		$decoded = html_entity_decode( $set_name, ENT_QUOTES, 'UTF-8' );
+		foreach ( $card_sets as $cs ) {
+			$cs_decoded = html_entity_decode( $cs['set_name'] ?? '', ENT_QUOTES, 'UTF-8' );
+			if ( $cs_decoded === $decoded || $cs_decoded === $set_name ) {
+				return $cs;
+			}
+		}
+		// Try set_code prefix match.
+		if ( $set_code ) {
+			$prefix = strtoupper( $set_code );
+			foreach ( $card_sets as $cs ) {
+				if ( strpos( strtoupper( $cs['set_code'] ?? '' ), $prefix . '-' ) === 0 ) {
+					return $cs;
+				}
 			}
 		}
 		return null;
@@ -137,7 +224,7 @@ class TCG_YGO_Importer {
 	 * @param string $set_name  The set being imported.
 	 * @return array Result with status and message.
 	 */
-	public function import_card( $card_data, $set_name ) {
+	public function import_card( $card_data, $set_name, $set_code = '' ) {
 		$card_id   = $card_data['id'] ?? 0;
 		$card_name = $card_data['name'] ?? '';
 
@@ -151,7 +238,7 @@ class TCG_YGO_Importer {
 		// Find the specific set entry for this import.
 		$set_entry = null;
 		if ( ! empty( $card_data['card_sets'] ) ) {
-			$set_entry = $this->find_set_entry( $card_data['card_sets'], $set_name );
+			$set_entry = $this->find_set_entry( $card_data['card_sets'], $set_name, $set_code );
 		}
 
 		$set_code = $set_entry['set_code'] ?? '';
@@ -351,8 +438,8 @@ class TCG_YGO_Importer {
 	 * @param int    $limit
 	 * @return array|WP_Error Stats array with created, updated, errors, log.
 	 */
-	public function import_batch( $set_name, $offset = 0, $limit = 20 ) {
-		$cards = $this->fetch_cards( $set_name, $limit, $offset );
+	public function import_batch( $set_name, $offset = 0, $limit = 20, $set_code = '' ) {
+		$cards = $this->fetch_cards( $set_name, $limit, $offset, $set_code );
 
 		if ( is_wp_error( $cards ) ) {
 			return $cards;
@@ -367,7 +454,7 @@ class TCG_YGO_Importer {
 		];
 
 		foreach ( $cards as $card_data ) {
-			$result = $this->import_card( $card_data, $set_name );
+			$result = $this->import_card( $card_data, $set_name, $set_code );
 
 			$stats['log'][] = $result;
 

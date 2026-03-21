@@ -73,7 +73,7 @@
 			if (set.num_of_cards) {
 				label += ' (' + set.num_of_cards + ' cartas)';
 			}
-			$setSelect.append('<option value="' + escHtml(set.set_name) + '">' + escHtml(label) + '</option>');
+			$setSelect.append('<option value="' + escHtml(set.set_name) + '" data-code="' + escHtml(set.set_code || '') + '">' + escHtml(label) + '</option>');
 		});
 
 		// Restore previous selection if it still exists.
@@ -87,6 +87,7 @@
 	// --- Import flow ---
 	$importBtn.on('click', function () {
 		var setName = $setSelect.val();
+		var setCode = $setSelect.find(':selected').data('code') || '';
 		if (!setName) {
 			alert('Selecciona un set primero.');
 			return;
@@ -100,12 +101,13 @@
 		$progressWrap.show();
 		updateProgress(0, 0);
 
-		log('Contando cartas en "' + setName + '"…');
+		log('Contando cartas en "' + setName + '"' + (setCode ? ' [' + setCode + ']' : '') + '…');
 
 		$.post(tcgImporter.ajax_url, {
 			action: 'tcg_count_cards',
 			nonce: tcgImporter.nonce,
-			set: setName
+			set: setName,
+			set_code: setCode
 		}, function (res) {
 			if (!res.success) {
 				log('Error contando cartas: ' + (res.data || 'desconocido'), 'error');
@@ -122,7 +124,7 @@
 				return;
 			}
 
-			importLoop(setName, 0, total, { created: 0, updated: 0, errors: 0 });
+			importLoop(setName, setCode, 0, total, { created: 0, updated: 0, errors: 0 });
 		}).fail(function () {
 			log('Error de red al contar cartas.', 'error');
 			resetUI();
@@ -138,7 +140,7 @@
 	// --- Batch loop ---
 	var maxRetries = 3;
 
-	function importLoop(setName, offset, total, stats, retries) {
+	function importLoop(setName, setCode, offset, total, stats, retries) {
 		retries = retries || 0;
 
 		if (cancelled || offset >= total) {
@@ -154,6 +156,7 @@
 			action: 'tcg_import_batch',
 			nonce: tcgImporter.nonce,
 			set: setName,
+			set_code: setCode,
 			offset: offset,
 			limit: batchSize
 		}, function (res) {
@@ -179,12 +182,12 @@
 			updateProgress(pct, newOffset, total);
 
 			// Continue with next batch (reset retries).
-			importLoop(setName, newOffset, total, stats, 0);
+			importLoop(setName, setCode, newOffset, total, stats, 0);
 		}).fail(function () {
 			if (retries < maxRetries) {
 				log('Error de red en lote (offset ' + offset + '). Reintento ' + (retries + 1) + '/' + maxRetries + '…', 'error');
 				setTimeout(function () {
-					importLoop(setName, offset, total, stats, retries + 1);
+					importLoop(setName, setCode, offset, total, stats, retries + 1);
 				}, 3000);
 			} else {
 				log('Error de red persistente en lote (offset ' + offset + '). Saltando lote.', 'error');
@@ -192,7 +195,7 @@
 				var newOffset = offset + batchSize;
 				var pct = Math.min(Math.round((newOffset / total) * 100), 100);
 				updateProgress(pct, newOffset, total);
-				importLoop(setName, newOffset, total, stats, 0);
+				importLoop(setName, setCode, newOffset, total, stats, 0);
 			}
 		});
 	}
