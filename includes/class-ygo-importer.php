@@ -68,15 +68,19 @@ class TCG_YGO_Importer {
 
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 
-		if ( empty( $body['meta']['total_rows'] ) && empty( $body['data'] ) ) {
-			return new WP_Error( 'api_error', 'No se pudieron contar las cartas del set.' );
+		if ( ! empty( $body['error'] ) ) {
+			return new WP_Error( 'api_error', 'La API no tiene cartas para este set. Es posible que aún no haya sido lanzado.' );
 		}
 
 		if ( isset( $body['meta']['total_rows'] ) ) {
 			return (int) $body['meta']['total_rows'];
 		}
 
-		return 0;
+		if ( ! empty( $body['data'] ) ) {
+			return count( $body['data'] );
+		}
+
+		return new WP_Error( 'api_error', 'No se pudieron contar las cartas del set.' );
 	}
 
 	/**
