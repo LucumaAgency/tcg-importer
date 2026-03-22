@@ -474,6 +474,7 @@ class TCG_YGO_Importer {
 		// Invalidate card list cache so new cards appear in vendor search.
 		if ( $stats['created'] > 0 ) {
 			delete_transient( 'tcg_dokan_cards_js' );
+			delete_transient( 'tcg_manager_cards_js' );
 		}
 
 		return $stats;
