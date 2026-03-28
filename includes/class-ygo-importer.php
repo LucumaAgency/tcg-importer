@@ -439,10 +439,8 @@ class TCG_YGO_Importer {
 	 * @return array|WP_Error
 	 */
 	public function import_card_by_name( $card_name, $set_name, $set_code = '' ) {
-		// Search by exact name.
-		$url = add_query_arg( [
-			'name' => $card_name,
-		], self::API_BASE . 'cardinfo.php' );
+		// Search by exact name — build URL manually to preserve & in card names.
+		$url = self::API_BASE . 'cardinfo.php?name=' . rawurlencode( $card_name );
 
 		$response = wp_remote_get( $url, [ 'timeout' => 30 ] );
 
@@ -454,10 +452,7 @@ class TCG_YGO_Importer {
 
 		if ( ! empty( $body['error'] ) || empty( $body['data'][0] ) ) {
 			// Try fuzzy search.
-			$url = add_query_arg( [
-				'fname' => $card_name,
-				'num'   => 1,
-			], self::API_BASE . 'cardinfo.php' );
+			$url = self::API_BASE . 'cardinfo.php?fname=' . rawurlencode( $card_name ) . '&num=1';
 
 			$response = wp_remote_get( $url, [ 'timeout' => 30 ] );
 
