@@ -204,8 +204,8 @@ add_action( 'wp_ajax_tcg_import_batch', function () {
 add_action( 'wp_ajax_tcg_import_by_name', function () {
 	check_ajax_referer( 'tcg_importer_nonce', 'nonce' );
 
-	$card_name = isset( $_POST['card_name'] ) ? sanitize_text_field( wp_unslash( $_POST['card_name'] ) ) : '';
-	$set_name  = isset( $_POST['set_name'] ) ? sanitize_text_field( wp_unslash( $_POST['set_name'] ) ) : '';
+	$card_name = isset( $_POST['card_name'] ) ? wp_specialchars_decode( sanitize_text_field( wp_unslash( $_POST['card_name'] ) ) ) : '';
+	$set_name  = isset( $_POST['set_name'] ) ? wp_specialchars_decode( sanitize_text_field( wp_unslash( $_POST['set_name'] ) ) ) : '';
 	$set_code  = isset( $_POST['set_code'] ) ? sanitize_text_field( wp_unslash( $_POST['set_code'] ) ) : '';
 
 	if ( empty( $card_name ) || empty( $set_name ) ) {
