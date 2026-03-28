@@ -505,7 +505,7 @@ class TCG_YGO_Importer {
 			];
 		}
 
-		// Dedup by _ygo_card_id + _ygo_set_code.
+		// Dedup: exact match by _ygo_card_id + _ygo_set_code.
 		$existing = get_posts( [
 			'post_type'      => 'ygo_card',
 			'post_status'    => 'any',
@@ -517,6 +517,21 @@ class TCG_YGO_Importer {
 				[ 'key' => '_ygo_set_code', 'value' => $set_code ],
 			],
 		] );
+
+		// Fallback: find card with same _ygo_card_id and empty set_code (imported without code).
+		if ( empty( $existing ) && ! empty( $set_code ) ) {
+			$existing = get_posts( [
+				'post_type'      => 'ygo_card',
+				'post_status'    => 'any',
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+				'meta_query'     => [
+					'relation' => 'AND',
+					[ 'key' => '_ygo_card_id', 'value' => $card_id ],
+					[ 'key' => '_ygo_set_code', 'value' => '' ],
+				],
+			] );
+		}
 
 		$is_update = ! empty( $existing );
 		$post_id   = $is_update ? $existing[0] : 0;
