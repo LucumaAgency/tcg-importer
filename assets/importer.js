@@ -339,6 +339,39 @@
 		});
 	}
 
+	// --- Delete set by code prefix ---
+	$('#tcg-delete-set-btn').on('click', function () {
+		var prefix  = $('#tcg-delete-code').val().trim();
+		var setName = $('#tcg-list-set-name').val().trim();
+
+		if (!prefix) {
+			alert('Ingresa el prefijo del código de set (ej: L26D).');
+			return;
+		}
+		if (!confirm('¿Seguro? Esto eliminará permanentemente TODAS las cartas ygo_card con código que empiece con "' + prefix + '".')) {
+			return;
+		}
+
+		var $status = $('#tcg-delete-status');
+		$status.html('<span style="color:#666;">Eliminando...</span>');
+
+		$.post(tcgImporter.ajax_url, {
+			action: 'tcg_delete_by_set_code',
+			nonce: tcgImporter.nonce,
+			prefix: prefix,
+			set_name: setName
+		}, function (res) {
+			if (res.success) {
+				$status.html('<span style="color:#46b450;">✓ ' + res.data.deleted + ' carta(s) eliminada(s).</span>');
+				log('Eliminadas ' + res.data.deleted + ' cartas con prefijo "' + prefix + '".', 'ok');
+			} else {
+				$status.html('<span style="color:#dc3545;">Error: ' + (res.data || 'desconocido') + '</span>');
+			}
+		}).fail(function () {
+			$status.html('<span style="color:#dc3545;">Error de red.</span>');
+		});
+	});
+
 	// Init.
 	loadSets();
 

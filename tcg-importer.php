@@ -113,6 +113,18 @@ function tcg_importer_render_page() {
 				<button id="tcg-list-cancel-btn" class="button" style="display:none;">Cancelar</button>
 				<span id="tcg-list-status" style="margin-left:12px;color:#555;"></span>
 			</div>
+
+			<hr style="margin:24px 0;">
+			<h3>Eliminar cartas de un set personalizado</h3>
+			<p class="description">Elimina todas las cartas ygo_card que tengan un código de set que empiece con el prefijo indicado. Útil para revertir una importación por lista.</p>
+			<div style="display:flex;gap:10px;align-items:flex-end;">
+				<div>
+					<label for="tcg-delete-code"><strong>Prefijo del set code:</strong></label><br>
+					<input type="text" id="tcg-delete-code" placeholder="L26D" style="width:200px;">
+				</div>
+				<button id="tcg-delete-set-btn" class="button" style="color:#dc3545;border-color:#dc3545;">Eliminar cartas</button>
+			</div>
+			<div id="tcg-delete-status" style="margin-top:10px;"></div>
 		</div>
 
 		<div class="tcg-progress-wrapper" style="display:none;">
@@ -227,4 +239,58 @@ add_action( 'wp_ajax_tcg_import_by_name', function () {
 	}
 
 	wp_send_json_success( $result );
+} );
+
+/**
+ * AJAX: Delete all ygo_card posts matching a set_code prefix.
+ */
+add_action( 'wp_ajax_tcg_delete_by_set_code', function () {
+	check_ajax_referer( 'tcg_importer_nonce', 'nonce' );
+
+	$prefix = isset( $_POST['prefix'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_POST['prefix'] ) ) ) : '';
+
+	if ( empty( $prefix ) || strlen( $prefix ) < 2 ) {
+		wp_send_json_error( 'Prefijo inválido (mínimo 2 caracteres).' );
+	}
+
+	global $wpdb;
+
+	// Find ygo_card posts whose _ygo_set_code starts with this prefix.
+	$post_ids = $wpdb->get_col( $wpdb->prepare(
+		"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
+		 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ygo_set_code'
+		 WHERE p.post_type = 'ygo_card' AND p.post_status IN ('publish','draft','pending')
+		 AND pm.meta_value LIKE %s",
+		$wpdb->esc_like( $prefix ) . '%'
+	) );
+
+	// Also find posts with empty _ygo_set_code that belong to the custom set taxonomy.
+	$set_name = isset( $_POST['set_name'] ) ? wp_specialchars_decode( sanitize_text_field( wp_unslash( $_POST['set_name'] ) ) ) : '';
+	if ( $set_name ) {
+		$term = get_term_by( 'name', $set_name, 'ygo_set' );
+		if ( $term ) {
+			$empty_code_ids = $wpdb->get_col( $wpdb->prepare(
+				"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ygo_set_code' AND pm.meta_value = ''
+				 INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+				 WHERE p.post_type = 'ygo_card' AND p.post_status IN ('publish','draft','pending')
+				 AND tr.term_taxonomy_id = %d",
+				$term->term_taxonomy_id
+			) );
+			$post_ids = array_unique( array_merge( $post_ids, $empty_code_ids ) );
+		}
+	}
+
+	$deleted = 0;
+	foreach ( $post_ids as $pid ) {
+		if ( wp_delete_post( (int) $pid, true ) ) {
+			$deleted++;
+		}
+	}
+
+	delete_transient( 'tcg_dokan_cards_js' );
+	delete_transient( 'tcg_manager_cards_js' );
+	delete_transient( 'tcg_theme_live_search' );
+
+	wp_send_json_success( [ 'deleted' => $deleted ] );
 } );

@@ -474,18 +474,12 @@ class TCG_YGO_Importer {
 
 		// Build a custom set entry since the set doesn't exist in the API.
 		$custom_set_entry = [
-			'set_name'       => $set_name,
-			'set_code'       => $set_code,
-			'set_rarity'     => '',
+			'set_name'        => $set_name,
+			'set_code'        => $set_code,
+			'set_rarity'      => '',
 			'set_rarity_code' => '',
-			'set_price'      => '',
+			'set_price'       => '',
 		];
-
-		// Try to find rarity from an existing set entry (use most common).
-		if ( ! empty( $card_data['card_sets'] ) ) {
-			$custom_set_entry['set_rarity']      = $card_data['card_sets'][0]['set_rarity'] ?? '';
-			$custom_set_entry['set_rarity_code'] = $card_data['card_sets'][0]['set_rarity_code'] ?? '';
-		}
 
 		return $this->import_card_with_custom_set( $card_data, $set_name, $custom_set_entry );
 	}
@@ -518,19 +512,25 @@ class TCG_YGO_Importer {
 			],
 		] );
 
-		// Fallback: find card with same _ygo_card_id and empty set_code (imported without code).
+		// Fallback: find card with same _ygo_card_id and set_code starting with same prefix or empty.
 		if ( empty( $existing ) && ! empty( $set_code ) ) {
-			$existing = get_posts( [
-				'post_type'      => 'ygo_card',
-				'post_status'    => 'any',
-				'posts_per_page' => 1,
-				'fields'         => 'ids',
-				'meta_query'     => [
-					'relation' => 'AND',
-					[ 'key' => '_ygo_card_id', 'value' => $card_id ],
-					[ 'key' => '_ygo_set_code', 'value' => '' ],
-				],
-			] );
+			$code_prefix = strtok( $set_code, '-' ); // "L26D-EN001" → "L26D"
+
+			global $wpdb;
+			$fallback_id = $wpdb->get_var( $wpdb->prepare(
+				"SELECT p.ID FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} pm_card ON p.ID = pm_card.post_id AND pm_card.meta_key = '_ygo_card_id' AND pm_card.meta_value = %s
+				 INNER JOIN {$wpdb->postmeta} pm_code ON p.ID = pm_code.post_id AND pm_code.meta_key = '_ygo_set_code'
+				   AND (pm_code.meta_value = '' OR pm_code.meta_value LIKE %s)
+				 WHERE p.post_type = 'ygo_card' AND p.post_status IN ('publish','draft','pending')
+				 LIMIT 1",
+				$card_id,
+				$wpdb->esc_like( $code_prefix ) . '%'
+			) );
+
+			if ( $fallback_id ) {
+				$existing = [ (int) $fallback_id ];
+			}
 		}
 
 		$is_update = ! empty( $existing );
