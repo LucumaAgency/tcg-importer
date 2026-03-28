@@ -110,3 +110,18 @@
 .tcg-log-error {
 	color: #f44747;
 }
+
+/* List import */
+.tcg-list-controls {
+	max-width: 700px;
+}
+
+.tcg-list-fields {
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	gap: 12px;
+}
+
+.tcg-list-fields input {
+	padding: 6px 8px;
+}

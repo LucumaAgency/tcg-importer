@@ -237,6 +237,108 @@
 		return div.innerHTML;
 	}
 
+	// --- Import by List ---
+	var $listImportBtn = $('#tcg-list-import-btn');
+	var $listCancelBtn = $('#tcg-list-cancel-btn');
+	var $listStatus    = $('#tcg-list-status');
+	var listCancelled  = false;
+
+	$listImportBtn.on('click', function () {
+		var setName  = $('#tcg-list-set-name').val().trim();
+		var setCode  = $('#tcg-list-set-code').val().trim();
+		var rawLines = $('#tcg-list-cards').val().trim();
+
+		if (!setName) {
+			alert('Ingresa el nombre del set.');
+			return;
+		}
+		if (!rawLines) {
+			alert('Ingresa al menos una carta.');
+			return;
+		}
+
+		var lines = rawLines.split('\n').filter(function (l) { return l.trim(); });
+		var cards = [];
+		for (var i = 0; i < lines.length; i++) {
+			var parts = lines[i].split('|');
+			var name  = parts[0].trim();
+			var code  = parts.length > 1 ? parts[1].trim() : '';
+			if (name) {
+				cards.push({ name: name, code: code });
+			}
+		}
+
+		if (!cards.length) {
+			alert('No se encontraron cartas válidas.');
+			return;
+		}
+
+		listCancelled = false;
+		$listImportBtn.prop('disabled', true);
+		$listCancelBtn.show();
+		$log.empty();
+		$summary.hide().empty();
+		$progressWrap.show();
+		updateProgress(0, 0, cards.length);
+
+		log('Importando ' + cards.length + ' carta(s) en "' + setName + '"…');
+
+		var stats = { created: 0, updated: 0, errors: 0 };
+		importListItem(cards, 0, setName, setCode, stats);
+	});
+
+	$listCancelBtn.on('click', function () {
+		listCancelled = true;
+		log('Importación por lista cancelada.', 'warn');
+		$listCancelBtn.hide();
+	});
+
+	function importListItem(cards, index, setName, setCode, stats) {
+		if (listCancelled || index >= cards.length) {
+			showSummary(stats, cards.length);
+			$listImportBtn.prop('disabled', false);
+			$listCancelBtn.hide();
+			return;
+		}
+
+		var card = cards[index];
+		var cardCode = card.code || '';
+		$listStatus.text((index + 1) + ' / ' + cards.length);
+
+		$.post(tcgImporter.ajax_url, {
+			action: 'tcg_import_by_name',
+			nonce: tcgImporter.nonce,
+			card_name: card.name,
+			set_name: setName,
+			set_code: cardCode
+		}, function (res) {
+			if (!res.success) {
+				log('✗ [error] ' + card.name + ': ' + (res.data || 'desconocido'), 'error');
+				stats.errors++;
+			} else {
+				var d = res.data;
+				var icon = d.status === 'created' ? '✓' :
+				           d.status === 'updated' ? '↻' : '✗';
+				var cls  = d.status === 'error' ? 'error' : 'ok';
+				log(icon + ' [' + d.status + '] ' + d.message, cls);
+
+				if (d.status === 'created') stats.created++;
+				else if (d.status === 'updated') stats.updated++;
+				else stats.errors++;
+			}
+
+			var pct = Math.round(((index + 1) / cards.length) * 100);
+			updateProgress(pct, index + 1, cards.length);
+			importListItem(cards, index + 1, setName, setCode, stats);
+		}).fail(function () {
+			log('✗ [error] ' + card.name + ': Error de red.', 'error');
+			stats.errors++;
+			var pct = Math.round(((index + 1) / cards.length) * 100);
+			updateProgress(pct, index + 1, cards.length);
+			importListItem(cards, index + 1, setName, setCode, stats);
+		});
+	}
+
 	// Init.
 	loadSets();
 

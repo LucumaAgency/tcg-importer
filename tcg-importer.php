@@ -85,6 +85,36 @@ function tcg_importer_render_page() {
 			<button id="tcg-cancel-btn" class="button" style="display:none;">Cancelar</button>
 		</div>
 
+		<hr style="margin:30px 0;">
+
+		<h2>Importar por Lista</h2>
+		<p class="description">Para sets que no están en la API. Busca cada carta por nombre y la importa con el set personalizado.</p>
+
+		<div class="tcg-list-controls">
+			<div class="tcg-list-fields">
+				<div>
+					<label for="tcg-list-set-name"><strong>Nombre del set:</strong></label><br>
+					<input type="text" id="tcg-list-set-name" placeholder="Legendary Modern Decks 2026" style="width:100%;">
+				</div>
+				<div>
+					<label for="tcg-list-set-code"><strong>Código del set:</strong></label><br>
+					<input type="text" id="tcg-list-set-code" placeholder="L26D" style="width:100%;">
+				</div>
+			</div>
+
+			<div style="margin-top:12px;">
+				<label for="tcg-list-cards"><strong>Cartas (una por línea):</strong></label>
+				<p class="description">Formato: <code>Nombre de carta | CODIGO-SET</code> — El código individual es opcional.</p>
+				<textarea id="tcg-list-cards" rows="12" style="width:100%;font-family:monospace;font-size:13px;" placeholder="Dark Magician | L26D-ENM01&#10;Blue-Eyes White Dragon | L26D-ENM02&#10;Red-Eyes Black Dragon"></textarea>
+			</div>
+
+			<div style="margin-top:12px;">
+				<button id="tcg-list-import-btn" class="button button-primary">Importar Lista</button>
+				<button id="tcg-list-cancel-btn" class="button" style="display:none;">Cancelar</button>
+				<span id="tcg-list-status" style="margin-left:12px;color:#555;"></span>
+			</div>
+		</div>
+
 		<div class="tcg-progress-wrapper" style="display:none;">
 			<div class="tcg-progress-bar-outer">
 				<div class="tcg-progress-bar-inner" style="width:0%;">
@@ -163,6 +193,37 @@ add_action( 'wp_ajax_tcg_import_batch', function () {
 
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( $result->get_error_message() );
+	}
+
+	wp_send_json_success( $result );
+} );
+
+/**
+ * AJAX: Import a single card by name with a custom set.
+ */
+add_action( 'wp_ajax_tcg_import_by_name', function () {
+	check_ajax_referer( 'tcg_importer_nonce', 'nonce' );
+
+	$card_name = isset( $_POST['card_name'] ) ? sanitize_text_field( wp_unslash( $_POST['card_name'] ) ) : '';
+	$set_name  = isset( $_POST['set_name'] ) ? sanitize_text_field( wp_unslash( $_POST['set_name'] ) ) : '';
+	$set_code  = isset( $_POST['set_code'] ) ? sanitize_text_field( wp_unslash( $_POST['set_code'] ) ) : '';
+
+	if ( empty( $card_name ) || empty( $set_name ) ) {
+		wp_send_json_error( 'Nombre de carta y set son obligatorios.' );
+	}
+
+	$importer = new TCG_YGO_Importer();
+	$result   = $importer->import_card_by_name( $card_name, $set_name, $set_code );
+
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error( $result->get_error_message() );
+	}
+
+	// Invalidate caches on creation.
+	if ( $result['status'] === 'created' ) {
+		delete_transient( 'tcg_dokan_cards_js' );
+		delete_transient( 'tcg_manager_cards_js' );
+		delete_transient( 'tcg_theme_live_search' );
 	}
 
 	wp_send_json_success( $result );

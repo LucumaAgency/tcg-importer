@@ -431,6 +431,149 @@ class TCG_YGO_Importer {
 	}
 
 	/**
+	 * Import a card by searching the API by exact name, with a custom set.
+	 *
+	 * @param string $card_name Exact card name to search.
+	 * @param string $set_name  Custom set name.
+	 * @param string $set_code  Custom set code (e.g. "L26D-ENM01").
+	 * @return array|WP_Error
+	 */
+	public function import_card_by_name( $card_name, $set_name, $set_code = '' ) {
+		// Search by exact name.
+		$url = add_query_arg( [
+			'name' => $card_name,
+		], self::API_BASE . 'cardinfo.php' );
+
+		$response = wp_remote_get( $url, [ 'timeout' => 30 ] );
+
+		if ( is_wp_error( $response ) ) {
+			return new WP_Error( 'api_error', $card_name . ': Error de red.' );
+		}
+
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( ! empty( $body['error'] ) || empty( $body['data'][0] ) ) {
+			// Try fuzzy search.
+			$url = add_query_arg( [
+				'fname' => $card_name,
+				'num'   => 1,
+			], self::API_BASE . 'cardinfo.php' );
+
+			$response = wp_remote_get( $url, [ 'timeout' => 30 ] );
+
+			if ( is_wp_error( $response ) ) {
+				return new WP_Error( 'api_error', $card_name . ': Error de red.' );
+			}
+
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+			if ( ! empty( $body['error'] ) || empty( $body['data'][0] ) ) {
+				return [
+					'status'  => 'error',
+					'message' => $card_name . ': No encontrada en la API.',
+				];
+			}
+		}
+
+		$card_data = $body['data'][0];
+
+		// Build a custom set entry since the set doesn't exist in the API.
+		$custom_set_entry = [
+			'set_name'       => $set_name,
+			'set_code'       => $set_code,
+			'set_rarity'     => '',
+			'set_rarity_code' => '',
+			'set_price'      => '',
+		];
+
+		// Try to find rarity from an existing set entry (use most common).
+		if ( ! empty( $card_data['card_sets'] ) ) {
+			$custom_set_entry['set_rarity']      = $card_data['card_sets'][0]['set_rarity'] ?? '';
+			$custom_set_entry['set_rarity_code'] = $card_data['card_sets'][0]['set_rarity_code'] ?? '';
+		}
+
+		return $this->import_card_with_custom_set( $card_data, $set_name, $custom_set_entry );
+	}
+
+	/**
+	 * Import a card with a custom set entry (for sets not in the API).
+	 */
+	private function import_card_with_custom_set( $card_data, $set_name, $set_entry ) {
+		$card_id   = $card_data['id'] ?? 0;
+		$card_name = $card_data['name'] ?? '';
+		$set_code  = $set_entry['set_code'] ?? '';
+
+		if ( empty( $card_id ) || empty( $card_name ) ) {
+			return [
+				'status'  => 'error',
+				'message' => 'Datos de carta incompletos.',
+			];
+		}
+
+		// Dedup by _ygo_card_id + _ygo_set_code.
+		$existing = get_posts( [
+			'post_type'      => 'ygo_card',
+			'post_status'    => 'any',
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+			'meta_query'     => [
+				'relation' => 'AND',
+				[ 'key' => '_ygo_card_id', 'value' => $card_id ],
+				[ 'key' => '_ygo_set_code', 'value' => $set_code ],
+			],
+		] );
+
+		$is_update = ! empty( $existing );
+		$post_id   = $is_update ? $existing[0] : 0;
+
+		$post_title = $card_name;
+		if ( ! empty( $set_code ) ) {
+			$post_title .= ' (' . $set_code . ')';
+		}
+
+		$post_args = [
+			'post_type'    => 'ygo_card',
+			'post_title'   => sanitize_text_field( $post_title ),
+			'post_content' => isset( $card_data['desc'] ) ? wp_kses_post( $card_data['desc'] ) : '',
+			'post_status'  => 'publish',
+		];
+
+		if ( $is_update ) {
+			$post_args['ID'] = $post_id;
+			$result = wp_update_post( $post_args, true );
+		} else {
+			$result = wp_insert_post( $post_args, true );
+		}
+
+		if ( is_wp_error( $result ) ) {
+			return [
+				'status'  => 'error',
+				'message' => $card_name . ': ' . $result->get_error_message(),
+			];
+		}
+
+		$post_id = $is_update ? $post_id : $result;
+
+		$this->save_meta( $post_id, $card_data, $set_entry );
+		$this->save_taxonomies( $post_id, $card_data, $set_name );
+
+		if ( ! has_post_thumbnail( $post_id ) ) {
+			$this->save_featured_image( $post_id, $card_data );
+		}
+
+		$label = $card_name;
+		if ( $set_code ) {
+			$label .= ' [' . $set_code . ']';
+		}
+
+		return [
+			'status'  => $is_update ? 'updated' : 'created',
+			'message' => $label,
+			'post_id' => $post_id,
+		];
+	}
+
+	/**
 	 * Import a batch of cards from a set.
 	 *
 	 * @param string $set_name
