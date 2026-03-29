@@ -261,10 +261,11 @@
 		var cards = [];
 		for (var i = 0; i < lines.length; i++) {
 			var parts = lines[i].split('|');
-			var name  = parts[0].trim();
-			var code  = parts.length > 1 ? parts[1].trim() : '';
+			var name   = parts[0].trim();
+			var code   = parts.length > 1 ? parts[1].trim() : '';
+			var rarity = parts.length > 2 ? parts[2].trim() : '';
 			if (name) {
-				cards.push({ name: name, code: code });
+				cards.push({ name: name, code: code, rarity: rarity });
 			}
 		}
 
@@ -310,7 +311,8 @@
 			nonce: tcgImporter.nonce,
 			card_name: card.name,
 			set_name: setName,
-			set_code: cardCode
+			set_code: cardCode,
+			rarity: card.rarity || ''
 		}, function (res) {
 			if (!res.success) {
 				log('✗ [error] ' + card.name + ': ' + (res.data || 'desconocido'), 'error');

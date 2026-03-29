@@ -438,7 +438,7 @@ class TCG_YGO_Importer {
 	 * @param string $set_code  Custom set code (e.g. "L26D-ENM01").
 	 * @return array|WP_Error
 	 */
-	public function import_card_by_name( $card_name, $set_name, $set_code = '' ) {
+	public function import_card_by_name( $card_name, $set_name, $set_code = '', $rarity = '' ) {
 		// Search by exact name — build URL manually to preserve & in card names.
 		$url = self::API_BASE . 'cardinfo.php?name=' . rawurlencode( $card_name );
 
@@ -476,7 +476,7 @@ class TCG_YGO_Importer {
 		$custom_set_entry = [
 			'set_name'        => $set_name,
 			'set_code'        => $set_code,
-			'set_rarity'      => '',
+			'set_rarity'      => $rarity,
 			'set_rarity_code' => '',
 			'set_price'       => '',
 		];

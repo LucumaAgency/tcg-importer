@@ -104,8 +104,8 @@ function tcg_importer_render_page() {
 
 			<div style="margin-top:12px;">
 				<label for="tcg-list-cards"><strong>Cartas (una por línea):</strong></label>
-				<p class="description">Formato: <code>Nombre de carta | CODIGO-SET</code> — El código individual es opcional.</p>
-				<textarea id="tcg-list-cards" rows="12" style="width:100%;font-family:monospace;font-size:13px;" placeholder="Dark Magician | L26D-ENM01&#10;Blue-Eyes White Dragon | L26D-ENM02&#10;Red-Eyes Black Dragon"></textarea>
+				<p class="description">Formato: <code>Nombre | CODIGO | Rareza(s)</code> — Código y rareza son opcionales. Múltiples rarezas separadas con <code>/</code></p>
+				<textarea id="tcg-list-cards" rows="12" style="width:100%;font-family:monospace;font-size:13px;" placeholder="Dark Magician | L26D-EN001 | Ultra Rare / Secret Rare&#10;Blue-Eyes White Dragon | L26D-EN002 | Common&#10;Red-Eyes Black Dragon | L26D-EN003"></textarea>
 			</div>
 
 			<div style="margin-top:12px;">
@@ -219,13 +219,14 @@ add_action( 'wp_ajax_tcg_import_by_name', function () {
 	$card_name = isset( $_POST['card_name'] ) ? wp_specialchars_decode( sanitize_text_field( wp_unslash( $_POST['card_name'] ) ) ) : '';
 	$set_name  = isset( $_POST['set_name'] ) ? wp_specialchars_decode( sanitize_text_field( wp_unslash( $_POST['set_name'] ) ) ) : '';
 	$set_code  = isset( $_POST['set_code'] ) ? sanitize_text_field( wp_unslash( $_POST['set_code'] ) ) : '';
+	$rarity    = isset( $_POST['rarity'] ) ? sanitize_text_field( wp_unslash( $_POST['rarity'] ) ) : '';
 
 	if ( empty( $card_name ) || empty( $set_name ) ) {
 		wp_send_json_error( 'Nombre de carta y set son obligatorios.' );
 	}
 
 	$importer = new TCG_YGO_Importer();
-	$result   = $importer->import_card_by_name( $card_name, $set_name, $set_code );
+	$result   = $importer->import_card_by_name( $card_name, $set_name, $set_code, $rarity );
 
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( $result->get_error_message() );
