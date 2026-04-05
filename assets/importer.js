@@ -15,6 +15,7 @@
 	var cancelled = false;
 	var batchSize = 20;
 	var allSets = [];
+	var importedCodes = tcgImporter.imported_codes || [];
 
 	// --- Load sets on page load ---
 	function loadSets() {
@@ -73,7 +74,11 @@
 			if (set.num_of_cards) {
 				label += ' (' + set.num_of_cards + ' cartas)';
 			}
-			$setSelect.append('<option value="' + escHtml(set.set_name) + '" data-code="' + escHtml(set.set_code || '') + '">' + escHtml(label) + '</option>');
+			var isImported = set.set_code && importedCodes.indexOf(set.set_code.toUpperCase()) !== -1;
+			if (isImported) {
+				label = '✓ ' + label;
+			}
+			$setSelect.append('<option value="' + escHtml(set.set_name) + '" data-code="' + escHtml(set.set_code || '') + '"' + (isImported ? ' style="color:#46b450;font-weight:600;"' : '') + '>' + escHtml(label) + '</option>');
 		});
 
 		// Restore previous selection if it still exists.
