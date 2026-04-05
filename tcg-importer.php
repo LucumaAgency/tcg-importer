@@ -54,19 +54,20 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 		true
 	);
 
-	// Get imported set codes for highlighting.
-	global $wpdb;
-	$imported_codes = $wpdb->get_col(
-		"SELECT DISTINCT UPPER(SUBSTRING_INDEX(pm.meta_value, '-', 1)) AS set_prefix
-		 FROM {$wpdb->posts} p
-		 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ygo_set_code' AND pm.meta_value != ''
-		 WHERE p.post_type = 'ygo_card' AND p.post_status IN ('publish', 'draft')"
-	);
+	// Get imported set names (from ygo_set taxonomy on ygo_card posts).
+	$imported_sets = get_terms( [
+		'taxonomy'   => 'ygo_set',
+		'hide_empty' => true,
+		'fields'     => 'names',
+	] );
+	if ( is_wp_error( $imported_sets ) ) {
+		$imported_sets = [];
+	}
 
 	wp_localize_script( 'tcg-importer-js', 'tcgImporter', [
 		'ajax_url'       => admin_url( 'admin-ajax.php' ),
 		'nonce'          => wp_create_nonce( 'tcg_importer_nonce' ),
-		'imported_codes' => $imported_codes,
+		'imported_sets'  => array_values( $imported_sets ),
 	] );
 } );
 

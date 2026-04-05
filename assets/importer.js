@@ -15,7 +15,7 @@
 	var cancelled = false;
 	var batchSize = 20;
 	var allSets = [];
-	var importedCodes = (tcgImporter.imported_codes || []).map(function(c) { return c.toUpperCase(); });
+	var importedSets = (tcgImporter.imported_sets || []).map(function(s) { return s.toLowerCase(); });
 
 	// --- Load sets on page load ---
 	function loadSets() {
@@ -74,7 +74,7 @@
 			if (set.num_of_cards) {
 				label += ' (' + set.num_of_cards + ' cartas)';
 			}
-			var isImported = set.set_code && importedCodes.indexOf(set.set_code.toUpperCase()) !== -1;
+			var isImported = importedSets.indexOf(set.set_name.toLowerCase()) !== -1;
 			if (isImported) {
 				label = '✓ ' + label;
 			}
