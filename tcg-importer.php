@@ -57,10 +57,10 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 	// Get imported set codes for highlighting.
 	global $wpdb;
 	$imported_codes = $wpdb->get_col(
-		"SELECT DISTINCT SUBSTRING_INDEX(pm.meta_value, '-', 1) AS set_prefix
+		"SELECT DISTINCT UPPER(SUBSTRING_INDEX(pm.meta_value, '-', 1)) AS set_prefix
 		 FROM {$wpdb->posts} p
 		 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ygo_set_code' AND pm.meta_value != ''
-		 WHERE p.post_type = 'ygo_card' AND p.post_status = 'publish'"
+		 WHERE p.post_type = 'ygo_card' AND p.post_status IN ('publish', 'draft')"
 	);
 
 	wp_localize_script( 'tcg-importer-js', 'tcgImporter', [

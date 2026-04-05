@@ -15,7 +15,7 @@
 	var cancelled = false;
 	var batchSize = 20;
 	var allSets = [];
-	var importedCodes = tcgImporter.imported_codes || [];
+	var importedCodes = (tcgImporter.imported_codes || []).map(function(c) { return c.toUpperCase(); });
 
 	// --- Load sets on page load ---
 	function loadSets() {
